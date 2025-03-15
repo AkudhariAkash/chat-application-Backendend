@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const authRoutes = require("./routes/auths");
 const messageRoutes = require("./routes/messages");
 const notificationRoutes = require("./routes/notification");
-const { router: logoutRouter, authenticateToken } = require('./routes/logout');
+const { router: logoutRouter, authenticateToken } = require("./routes/logout");
 const videoCallRoutes = require("./routes/videoCall"); // ✅ Import video call routes
 const socket = require("socket.io");
 require("dotenv").config();
@@ -44,8 +44,7 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors());
-app.use(express.static('public'));
+app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
 // ✅ Initialize Socket.io
@@ -57,34 +56,42 @@ const io = socket(server, {
   },
 });
 
-// Connect to MongoDB
+// ✅ MongoDB Connection
 mongoose
   .connect(process.env.MONGODB_URI)
-  .then(() => console.log("DB Connection Successful"))
-  .catch((err) => console.error("Error connecting to DB:", err.message));
+  .then(() => console.log("✅ DB Connection Successful"))
+  .catch((err) => console.error("❌ Error connecting to DB:", err.message));
 
-// API routes
+// ✅ API Routes
 app.use("/api/auths", authRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/notification", notificationRoutes(io));
-app.use('/api/logout', logoutRouter);
-app.use("/api/videoCall", videoCallRoutes); // ✅ Added Video Call routes
+app.use("/api/logout", logoutRouter);
+app.use("/api/videoCall", videoCallRoutes);
 
-// Sample protected route
-app.get('/api/protected', authenticateToken, (req, res) => {
+// ✅ Default Route for Debugging
+app.get("/", (req, res) => {
+  res.send("✅ Server is running...");
+});
+
+// ✅ Protected Route Example
+app.get("/api/protected", authenticateToken, (req, res) => {
   res.json({ message: "This is a protected route", user: req.user });
 });
 
-// Start the server
-server.listen(process.env.PORT, () => {
-  console.log(`Server started on port ${process.env.PORT}`);
+// ✅ Start the Server
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`🚀 Server started on port ${PORT}`);
 });
 
+// ✅ Global Variables & Active Users Map
 global.onlineUsers = new Map();
-const users = {}; // Store active users
+const users = {};
 
+// ✅ Socket.io Events
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("🔗 User connected:", socket.id);
 
   socket.on("add-user", (email) => {
     global.onlineUsers.set(email, socket.id);
@@ -100,29 +107,33 @@ io.on("connection", (socket) => {
 
   socket.on("join", (userId) => {
     users[userId] = socket.id;
-    console.log(`User ${userId} is online with socket ID ${socket.id}`);
+    console.log(`👤 User ${userId} is online with socket ID ${socket.id}`);
     io.emit("active-users", Object.keys(users));
   });
 
   socket.on("send-msg", ({ to, msg, from }) => {
-    console.log(`Message from ${from} to ${to}:`, msg);
+    console.log(`📩 Message from ${from} to ${to}:`, msg);
     if (users[to]) {
-      console.log(`Sending message to user: ${to}, Socket ID: ${users[to]}`);
+      console.log(`📤 Sending message to ${to}, Socket ID: ${users[to]}`);
       io.to(users[to]).emit("msg-receive", { msg, from });
     } else {
-      console.log("Recipient is offline or not connected.");
+      console.log("⚠️ Recipient is offline or not connected.");
     }
   });
 
-  socket.on('send-voice-msg', ({ to, audioUrl, from }) => {
-    console.log(`Voice message from ${from} to ${to}:`, audioUrl);
-    io.to(to).emit('receive-voice-msg', { audioUrl, from });
+  socket.on("send-voice-msg", ({ to, audioUrl, from }) => {
+    console.log(`🎙️ Voice message from ${from} to ${to}:`, audioUrl);
+    if (users[to]) {
+      io.to(users[to]).emit("receive-voice-msg", { audioUrl, from });
+    } else {
+      console.log("⚠️ Recipient is offline or not connected.");
+    }
   });
 
   socket.on("disconnect", () => {
     Object.keys(users).forEach((key) => {
       if (users[key] === socket.id) {
-        console.log(`User ${key} disconnected`);
+        console.log(`❌ User ${key} disconnected`);
         delete users[key];
       }
     });
