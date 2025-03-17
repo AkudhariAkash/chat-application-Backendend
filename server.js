@@ -17,6 +17,8 @@ const server = http.createServer(app);
 const allowedOrigins = [
   "http://localhost:3000",
   "https://chat-application-frontend-eta.vercel.app",
+  "https://chat-application-frontend-eta.vercel.app",
+  "*",
 ];
 
 // ✅ CORS Middleware for Express
