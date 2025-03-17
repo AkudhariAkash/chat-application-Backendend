@@ -5,7 +5,7 @@ const authRoutes = require("./routes/auths");
 const messageRoutes = require("./routes/messages");
 const notificationRoutes = require("./routes/notification");
 const { router: logoutRouter, authenticateToken } = require("./routes/logout");
-const videoCallRoutes = require("./routes/videoCall"); // ✅ Import video call routes
+const videoCallRoutes = require("./routes/videoCall");
 const socket = require("socket.io");
 require("dotenv").config();
 const http = require("http");
@@ -13,34 +13,26 @@ const http = require("http");
 const app = express();
 const server = http.createServer(app);
 
-// ✅ Allow the correct frontend domain
+// ✅ Allowed Frontend Domains
 const allowedOrigins = [
-  //"https://chat-app-front-end-idnz.vercel.app",
- // "https://chat-app-delta-lemon.vercel.app",
-  "http://localhost:3000"," https://chat-application-frontend-eta.vercel.app",
-   //"https://chat-application-backendend.onrender.com",
-   "*"
-   
+  "http://localhost:3000",
+  "https://chat-application-frontend-eta.vercel.app",
 ];
 
+// ✅ CORS Middleware for Express
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
 );
 
+// ✅ Security Headers (Content Security Policy)
 app.use((req, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; connect-src 'self' wss://chat-app-backend-2ph1.onrender.com https://chat-app-backend-2ph1.onrender.com;"
+    "default-src 'self'; connect-src 'self' wss://chat-application-backendend.onrender.com https://chat-application-backendend.onrender.com;"
   );
   next();
 });
@@ -50,13 +42,14 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
-// ✅ Initialize Socket.io
+// ✅ Initialize Socket.io with Correct CORS Settings
 const io = socket(server, {
   cors: {
     origin: allowedOrigins,
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST"],
     credentials: true,
   },
+  transports: ["websocket", "polling"], // ✅ Explicitly enable WebSockets
 });
 
 // ✅ MongoDB Connection
@@ -88,57 +81,54 @@ server.listen(PORT, () => {
   console.log(`🚀 Server started on port ${PORT}`);
 });
 
-// ✅ Global Variables & Active Users Map
-global.onlineUsers = new Map();
-const users = {};
+// ✅ Socket.io User Management
+const users = {}; // Stores active users
 
-// ✅ Socket.io Events
 io.on("connection", (socket) => {
-  console.log("🔗 User connected:", socket.id);
+  console.log(`🔗 User connected: ${socket.id}`);
 
   socket.on("add-user", (email) => {
-    global.onlineUsers.set(email, socket.id);
-    console.log(`✅ User ${email} added to online users.`);
-  });
-
-  socket.on("send-notification", ({ email, message }) => {
-    const userSocketId = global.onlineUsers.get(email);
-    if (userSocketId) {
-      io.to(userSocketId).emit("new-notification", { email, message });
-    }
-  });
-
-  socket.on("join", (userId) => {
-    users[userId] = socket.id;
-    console.log(`👤 User ${userId} is online with socket ID ${socket.id}`);
+    users[email] = socket.id;
+    console.log(`✅ User ${email} added. Online users:`, Object.keys(users));
     io.emit("active-users", Object.keys(users));
   });
 
-  socket.on("send-msg", ({ to, msg, from }) => {
-    console.log(`📩 Message from ${from} to ${to}:`, msg);
-    if (users[to]) {
-      console.log(`📤 Sending message to ${to}, Socket ID: ${users[to]}`);
-      io.to(users[to]).emit("msg-receive", { msg, from });
+  socket.on("send-notification", ({ email, message }) => {
+    const userSocketId = users[email];
+    if (userSocketId) {
+      io.to(userSocketId).emit("new-notification", { email, message });
+      console.log(`🔔 Notification sent to ${email}`);
     } else {
-      console.log("⚠️ Recipient is offline or not connected.");
+      console.log(`⚠️ User ${email} is offline.`);
+    }
+  });
+
+  socket.on("send-msg", ({ to, msg, from }) => {
+    console.log(`📩 Message from ${from} to ${to}: ${msg}`);
+    if (users[to]) {
+      io.to(users[to]).emit("msg-receive", { msg, from });
+      console.log(`📤 Sent to ${to}`);
+    } else {
+      console.log(`⚠️ ${to} is offline.`);
     }
   });
 
   socket.on("send-voice-msg", ({ to, audioUrl, from }) => {
-    console.log(`🎙️ Voice message from ${from} to ${to}:`, audioUrl);
+    console.log(`🎙️ Voice message from ${from} to ${to}`);
     if (users[to]) {
       io.to(users[to]).emit("receive-voice-msg", { audioUrl, from });
     } else {
-      console.log("⚠️ Recipient is offline or not connected.");
+      console.log(`⚠️ ${to} is offline.`);
     }
   });
 
   socket.on("disconnect", () => {
-    Object.keys(users).forEach((key) => {
-      if (users[key] === socket.id) {
-        console.log(`❌ User ${key} disconnected`);
-        delete users[key];
+    for (let user in users) {
+      if (users[user] === socket.id) {
+        console.log(`❌ User ${user} disconnected`);
+        delete users[user];
       }
-    });
+    }
+    io.emit("active-users", Object.keys(users));
   });
 });
