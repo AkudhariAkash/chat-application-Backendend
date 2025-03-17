@@ -17,7 +17,7 @@ const server = http.createServer(app);
 const allowedOrigins = [
   "https://chat-app-front-end-idnz.vercel.app",
   "https://chat-app-delta-lemon.vercel.app",
-  "http://localhost:3000"," https://chat-application-frontend-eta.vercel.app",
+  "http://localhost:3000"," https://chat-application-frontend-eta.vercel.app", "https://chat-application-backendend.onrender.com"
 ];
 
 app.use(
