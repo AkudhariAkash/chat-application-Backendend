@@ -1,44 +1,119 @@
 const express = require("express");
 const { Server } = require("socket.io");
-const http = require("http");
 
 const router = express.Router();
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*", // Adjust this to allow only specific origins in production
-    methods: ["GET", "POST"]
-  }
-});
 
-io.on("connection", (socket) => {
-  console.log("A user connected:", socket.id);
+module.exports = (io) => {
+  const users = {}; // Maps userId -> socketId
+  const rooms = {}; // Maps roomId -> Set of participants
 
-  socket.on("join-room", (roomId, userId) => {
-    socket.join(roomId);
-    socket.to(roomId).emit("user-connected", userId);
+  io.on("connection", (socket) => {
+    console.log(`🔵 User connected: ${socket.id}`);
 
+    // ✅ Register user
+    socket.on("register-user", (userId) => {
+      users[userId] = socket.id;
+      console.log(`✅ User ${userId} registered with socket ID ${socket.id}`);
+    });
+
+    // ✅ Initiate call (One-to-One or Group)
+    socket.on("call-users", ({ from, toUsers, roomId }) => {
+      if (!rooms[roomId]) {
+        rooms[roomId] = new Set();
+      }
+
+      rooms[roomId].add(from);
+      toUsers.forEach((to) => {
+        const toSocket = users[to];
+        if (toSocket) {
+          rooms[roomId].add(to);
+          io.to(toSocket).emit("incoming-call", { from, roomId });
+          console.log(`📞 Call request sent from ${from} to ${to} in room ${roomId}`);
+        } else {
+          console.log(`⚠️ User ${to} is offline or not registered.`);
+        }
+      });
+    });
+
+    // ✅ Accept call
+    socket.on("accept-call", ({ userId, roomId }) => {
+      if (rooms[roomId]) {
+        rooms[roomId].forEach((participant) => {
+          if (participant !== userId && users[participant]) {
+            io.to(users[participant]).emit("user-joined", { userId });
+          }
+        });
+        console.log(`✅ ${userId} accepted call in room ${roomId}`);
+      }
+    });
+
+    // ✅ Reject call
+    socket.on("reject-call", ({ userId, roomId }) => {
+      if (rooms[roomId]) {
+        rooms[roomId].delete(userId);
+        rooms[roomId].forEach((participant) => {
+          io.to(users[participant]).emit("call-rejected", { userId });
+        });
+        console.log(`❌ ${userId} rejected the call in room ${roomId}`);
+      }
+    });
+
+    // ✅ ICE Candidate Exchange (WebRTC)
+    socket.on("ice-candidate", ({ to, candidate }) => {
+      const toSocket = users[to];
+      if (toSocket) {
+        io.to(toSocket).emit("ice-candidate", candidate);
+      }
+    });
+
+    // ✅ Handle Screen Sharing
+    socket.on("share-screen", ({ userId, roomId }) => {
+      if (rooms[roomId]) {
+        rooms[roomId].forEach((participant) => {
+          if (participant !== userId && users[participant]) {
+            io.to(users[participant]).emit("screen-shared", { userId });
+          }
+        });
+        console.log(`📺 ${userId} started screen sharing in room ${roomId}`);
+      }
+    });
+
+    // ✅ Stop Screen Sharing
+    socket.on("stop-screen-share", ({ userId, roomId }) => {
+      if (rooms[roomId]) {
+        rooms[roomId].forEach((participant) => {
+          if (participant !== userId && users[participant]) {
+            io.to(users[participant]).emit("screen-share-stopped", { userId });
+          }
+        });
+        console.log(`🚫 ${userId} stopped screen sharing in room ${roomId}`);
+      }
+    });
+
+    // ✅ End Call
+    socket.on("end-call", ({ roomId }) => {
+      if (rooms[roomId]) {
+        rooms[roomId].forEach((participant) => {
+          if (users[participant]) {
+            io.to(users[participant]).emit("call-ended", { roomId });
+          }
+        });
+        delete rooms[roomId];
+        console.log(`🔴 Call in room ${roomId} ended`);
+      }
+    });
+
+    // ✅ Handle user disconnect
     socket.on("disconnect", () => {
-      socket.to(roomId).emit("user-disconnected", userId);
+      for (const userId in users) {
+        if (users[userId] === socket.id) {
+          delete users[userId];
+          console.log(`🔴 User ${userId} disconnected`);
+          break;
+        }
+      }
     });
   });
 
-  socket.on("offer", ({ roomId, offer }) => {
-    socket.to(roomId).emit("offer", offer);
-  });
-
-  socket.on("answer", ({ roomId, answer }) => {
-    socket.to(roomId).emit("answer", answer);
-  });
-
-  socket.on("ice-candidate", ({ roomId, candidate }) => {
-    socket.to(roomId).emit("ice-candidate", candidate);
-  });
-});
-
-// server.listen(5000, () => {
-//   console.log("Server is running on port 5000");
-// });
-
-module.exports = router;
+  return router;
+};
